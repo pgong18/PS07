@@ -1,6 +1,6 @@
 ---
 title: "STAT/MATH 495: Problem Set 07"
-author: "WRITE YOUR NAME(S) HERE"
+author: "Pei Gong"
 date: "2017-10-24"
 output:
   html_document:
@@ -13,6 +13,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+library(corrplot)
 knitr::opts_chunk$set(
   echo = TRUE, fig.width=8, fig.height=4.5, message=FALSE, warning = FALSE
   )
@@ -24,9 +25,9 @@ library(broom)
 library(knitr)
 
 train <- read_csv("data/cs-training.csv") %>% 
-  rename(Id = X1)
+  rename(Id = X1) %>% sample_frac(0.01)
 test <- read_csv("data/cs-test.csv") %>% 
-  rename(Id = X1)
+  rename(Id = X1) %>% sample_frac(0.01)
 submission <- read_csv("data/sampleEntry.csv")
 ```
 
@@ -46,7 +47,54 @@ Build the binary classifier based on a single predictor variable: `DebtRatio`,
 `age`, or `MonthlyIncome`. Justify this choice.
 
 ```{r}
+ggplot(train, aes(x=MonthlyIncome)) +
+  geom_histogram(binwidth = 1) +
+  facet_wrap(~SeriousDlqin2yrs, nrow=2) +
+  labs(title="Self-reported heights for women vs men", x="Monthly Income")
+```
 
+```{r}
+ggplot(train, aes(x=age)) +
+  geom_histogram(binwidth = 1) +
+  facet_wrap(~SeriousDlqin2yrs, nrow=2) +
+  labs(title="Self-reported heights for women vs men", x="height (inches)")
+```
+
+```{r}
+ggplot(train, aes(x=DebtRatio)) +
+  geom_histogram(binwidth = 1) +
+  facet_wrap(~SeriousDlqin2yrs, nrow=2) +
+  labs(title="Self-reported heights for women vs men", x="height (inches)")
+```
+
+
+```{r}
+corPlotData <- train %>% select(DebtRatio, age, MonthlyIncome, SeriousDlqin2yrs) %>% cor()
+corrplot(corPlotData)
+```
+
+```{r}
+model1<-glm(SeriousDlqin2yrs~MonthlyIncome,data=train,family="binomial")
+model1 %>% 
+  broom::tidy(conf.int=TRUE)
+```
+
+Extract point by point information in tidy format 
+```{r}
+model_logistic %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  sample_n(5)
+```
+
+Step2: predict for train data 
+```{r}
+# 2. Make predictions on test data
+# Method 1:
+# -input: profiles_test is a data frame
+# -output: log_odds_hat is a vector of log odds
+log_odds_hat <- predict(model1,newdata=test)
+p_hat <- 1/(1 + exp(-log_odds_hat))
 ```
 
 
