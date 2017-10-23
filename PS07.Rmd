@@ -25,9 +25,9 @@ library(broom)
 library(knitr)
 
 train <- read_csv("data/cs-training.csv") %>% 
-  rename(Id = X1) %>% sample_frac(0.01)
+  rename(Id = X1)
 test <- read_csv("data/cs-test.csv") %>% 
-  rename(Id = X1) %>% sample_frac(0.01)
+  rename(Id = X1)
 submission <- read_csv("data/sampleEntry.csv")
 ```
 
@@ -37,83 +37,139 @@ Information on the competition can be found [here](https://www.kaggle.com/c/Give
 
 # Collaboration
 
-Please indicate who you collaborated with on this assignment: 
+Please indicate who you collaborated with on this assignment: Tim Lee
 
 
 
 # Build binary classifier
 
 Build the binary classifier based on a single predictor variable: `DebtRatio`,
-`age`, or `MonthlyIncome`. Justify this choice.
+`age`, or `MonthlyIncome`. Justify this choice. 
 
-```{r}
-ggplot(train, aes(x=MonthlyIncome)) +
-  geom_histogram(binwidth = 1) +
-  facet_wrap(~SeriousDlqin2yrs, nrow=2) +
-  labs(title="Self-reported heights for women vs men", x="Monthly Income")
-```
-
-```{r}
-ggplot(train, aes(x=age)) +
-  geom_histogram(binwidth = 1) +
-  facet_wrap(~SeriousDlqin2yrs, nrow=2) +
-  labs(title="Self-reported heights for women vs men", x="height (inches)")
-```
-
-```{r}
-ggplot(train, aes(x=DebtRatio)) +
-  geom_histogram(binwidth = 1) +
-  facet_wrap(~SeriousDlqin2yrs, nrow=2) +
-  labs(title="Self-reported heights for women vs men", x="height (inches)")
-```
-
-
-```{r}
-corPlotData <- train %>% select(DebtRatio, age, MonthlyIncome, SeriousDlqin2yrs) %>% cor()
-corrplot(corPlotData)
-```
-
+Fit logistic model on all three potential models
 ```{r}
 model1<-glm(SeriousDlqin2yrs~MonthlyIncome,data=train,family="binomial")
 model1 %>% 
   broom::tidy(conf.int=TRUE)
 ```
 
-Extract point by point information in tidy format 
 ```{r}
-model_logistic %>% 
-  broom::augment() %>% 
-  as_tibble() %>% 
-  sample_n(5)
+model2<-glm(SeriousDlqin2yrs~DebtRatio,data=train,family="binomial")
+model2 %>% 
+  broom::tidy(conf.int=TRUE)
 ```
 
-Step2: predict for train data 
 ```{r}
-# 2. Make predictions on test data
-# Method 1:
-# -input: profiles_test is a data frame
-# -output: log_odds_hat is a vector of log odds
+model3<-glm(SeriousDlqin2yrs~age,data=train,family="binomial")
+model3 %>% 
+  broom::tidy(conf.int=TRUE)
+```
+
+
+Step2: predict for auc value for all three models. Pick the predictor that returns highest auc value
+
+model1:
+```{r}
 log_odds_hat <- predict(model1,newdata=test)
 p_hat <- 1/(1 + exp(-log_odds_hat))
+
+profiles_train_augmented <- model1 %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat = 1/(1+exp(-.fitted)))
+
+library(ROCR)
+# This bit of code computes the ROC curve
+pred <- prediction(predictions = profiles_train_augmented$p_hat, labels = profiles_train_augmented$SeriousDlqin2yrs)
+perf <- performance(pred, "tpr","fpr") 
+
+# This bit of code computes the Area Under the Curve
+auc <- as.numeric(performance(pred,"auc")@y.values)
+auc
 ```
 
+model2 
+```{r}
+log_odds_hat2 <- predict(model2,newdata=test)
+p_hat2 <- 1/(1 + exp(-log_odds_hat2))
 
+profiles_train_augmented2 <- model2 %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat2 = 1/(1+exp(-.fitted)))
+
+pred2 <- prediction(predictions = profiles_train_augmented2$p_hat2, labels = profiles_train_augmented2$SeriousDlqin2yrs)
+perf2<- performance(pred2, "tpr","fpr") 
+
+# This bit of code computes the Area Under the Curve
+auc2 <- as.numeric(performance(pred2,"auc")@y.values)
+auc2
+```
+
+model3 
+```{r}
+log_odds_hat3 <- predict(model3,newdata=test)
+p_hat3 <- 1/(1 + exp(-log_odds_hat3))
+
+profiles_train_augmented3 <- model3 %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat3 = 1/(1+exp(-.fitted)))
+
+pred3 <- prediction(predictions = profiles_train_augmented3$p_hat3, labels = profiles_train_augmented3$SeriousDlqin2yrs)
+perf3<- performance(pred3, "tpr","fpr") 
+
+# This bit of code computes the Area Under the Curve
+auc3 <- as.numeric(performance(pred3,"auc")@y.values)
+auc3
+```
+Out of the three variable, predictor age is the best classifier because it returns the highest auc value, indicating that it has the highest predictive power of the binary outcome. 
+
+```{r}
+submission_kaggle<-bind_cols(Id=submission$Id,Probability=p_hat3)
+write.csv(submission_kaggle,file="submission.csv",row.names = FALSE)
+```
 
 # ROC curve
 
 Based on the ultimate classifier you choose, plot a corresponding ROC curve.
 
+
+Plot the ROC curve for age.
+
 ```{r}
-
+plot(perf, main=paste("Area Under the Curve =", round(auc3, 3)))
+abline(c(0, 1), lty=2)
 ```
-
 
 
 # ROC curve for random guessing
 
-Instead of using any predictor information as you did above, switch your
-predictions to random guesses and plot the resulting ROC curve.
+Instead of using any predictor information as you did above, switch your predictions to random guesses and plot the resulting ROC curve.
 
 ```{r}
+#shuffle the SeriousDlqin2yrs column against the dataset so there is no relationship between predictor and y
+train_shuffle<-train["SeriousDlqin2yrs"]%>% sample_frac(size = 1, replace = TRUE)
+train_hah<-bind_cols(train,train_shuffle)
+model4<-glm(SeriousDlqin2yrs1~age,data=train_hah,family="binomial")
+```
 
+```{r}
+log_odds_hat4 <- predict(model4,newdata=test)
+p_hat4 <- 1/(1 + exp(-log_odds_hat4))
+profiles_train_augmented4 <- model4 %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat4 = 1/(1+exp(-.fitted))) 
+  
+pred4 <- prediction(predictions = profiles_train_augmented4$p_hat4, 
+                   labels =profiles_train_augmented4$SeriousDlqin2yrs1)
+
+perf4 <- performance(pred4, "tpr","fpr") 
+
+# This bit of code computes the Area Under the Curve
+auc4 <- as.numeric(performance(pred4,"auc")@y.values)
+auc4
+plot(perf4, main=paste("Area Under the Curve =", round(auc4, 3)))
+abline(c(0, 1), lty=2)
 ```
